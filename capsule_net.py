@@ -5,13 +5,10 @@ from numpy import prod
 
 
 def squash(s, dim=-1):
-    '''
-    Eq. (1): v_j = ||s_j||^2 / (1 + ||s_j||^2) * s_j / ||s_j||
-    '''
-    sj_norm = torch.norm(s, 2, dim).unsqueeze(-1)
-    square_norm = sj_norm**2
-    
-    return square_norm / (1 + square_norm) * s / (sj_norm + 1e-8)
+
+
+    squared_norm = torch.sum(s**2, dim=dim, keepdim=True)
+    return squared_norm / (1 + squared_norm) * s / (torch.sqrt(squared_norm) + 1e-8)
 
 
 class CapsuleNet(nn.Module):
@@ -91,7 +88,7 @@ class PrimaryCapsules(nn.Module):
         s = [self.conv_units[i](x) for i in range(self.primary_dim)]
 
         # unit => [batch_size, primary_dim=8, out_channels=32, 6, 6]
-        s = torch.stack(s, dim=1)
+        s = torch.stack(s, dim=4)
         # unit => [batch_size, 1152, 8])
         s = s.view(x.size(0), -1, self.primary_dim)
         # compute v = squash(s)
@@ -128,7 +125,7 @@ class RoutingCapsules(nn.Module):
         # u_hat => [batch_size, 10, 1152, 16, 1]
         u_hat = torch.matmul(self.W, x)
         # u_hat => [batch_size, 10, 1152, 16]
-        u_hat = u_hat.squeeze()
+        u_hat = u_hat.squeeze(-1)
         temp_u_hat = u_hat.detach()
 
         batch_size = x.size(0)
@@ -149,7 +146,7 @@ class RoutingCapsules(nn.Module):
             b += torch.matmul(temp_u_hat, v.unsqueeze(-1))
 
         c = F.softmax(b, dim=1)
-        s = (c * temp_u_hat).sum(dim=2)
+        s = (c * u_hat).sum(dim=2)
         v = squash(s)
 
         return v
